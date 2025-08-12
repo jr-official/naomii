@@ -5,26 +5,26 @@ use axum::{
     Router,
     http::Request
 };
+use ports::get_free_port;
 
 #[tokio::main]
 async fn main() {
     let app = Router::new()
-    .route("/", get(|| async { "Hello, World!" }))
-    .route("/health", get(health));
-
-    println!("{}", ports::get_free_port());
+        .route("/", get(|| async { "Hello, World!" }))
+        .route("/health", get(health));
+    
+    println!("running on {} [unorganized mains]", get_free_port());
     
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    println!("mains [unorganized] running on 0.0.0.0:3000 ");
     axum::serve(listener, app).await.unwrap();
 }
-fn log(route: &str, method: &str, uragent: &str) {
-    println!("request::{} on {} by {}", method, route, uragent)
+fn log(route: &str, method: &str) {
+    println!("request::{} on {} for mains [unorganized]", method, route)
 }
 async fn health(req: Request<axum::body::Body>) -> &'static str {
-    let header = req.headers();
     let method = req.method();
-    let uragent = header.get("user-agent").map(|v| v.to_str().unwrap_or(""));
 
-    log("health", &method.to_string(), uragent.expect(""));
+    log("health", &method.to_string());
     "200 Ok"
 }

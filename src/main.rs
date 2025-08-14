@@ -1,30 +1,27 @@
 mod ports;
+mod server;
 
-use axum::{
-    routing::get,
-    Router,
-    http::Request
-};
-use ports::get_free_port;
+use std::io;
+use server::setup;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
-        .route("/health", get(health));
-    
-    println!("running on {} [unorganized mains]", get_free_port());
-    
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("mains [unorganized] running on 0.0.0.0:3000 ");
-    axum::serve(listener, app).await.unwrap();
-}
-fn log(route: &str, method: &str) {
-    println!("request::{} on {} for mains [unorganized]", method, route)
-}
-async fn health(req: Request<axum::body::Body>) -> &'static str {
-    let method = req.method();
+    let mut cmd = String::new();
+    io::stdin()
+        .read_line(&mut cmd)
+        .expect("Err reading line");
 
-    log("health", &method.to_string());
-    "200 Ok"
+    match cmd.trim() {
+        "!help" | "help" => {
+            println!("\x1b[1;34mNaomiiStartup commands\x1b[0m"); 
+            println!("\x1b[33m!help\x1b[0m, \x1b[33mhelp\x1b[0m - displays this menu");
+            println!("\x1b[33m!startup\x1b[0m, \x1b[33mstart\x1b[0m - starts naomii installation if you dont already have it");
+            println!("\x1b[33m!setnew\x1b[0m, \x1b[33mnew\x1b[0m, \x1b[33mset\x1b[0m - implements naomii router on a server");
+        }
+        "!setnew" | "set" | "new" => {
+            setup().await;
+        }
+        _ => todo!()
+    }
 }
+

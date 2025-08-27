@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include <ctime>
-
+//D:\Johaan\projects\Naomii\testing\testserver.cpp
 #pragma comment(lib, "ws2_32.lib")
 
 int main(int argc, char* argv[]) {

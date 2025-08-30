@@ -9,7 +9,6 @@ use crate::ports::get_free_port;
 
 /// Creates a new file with a random name and copies the contents of `path` into it.
 pub fn create_new_file_copy(path: &str) -> io::Result<String> {
-    // Generate a random hash
     let hash: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(16)
@@ -18,10 +17,8 @@ pub fn create_new_file_copy(path: &str) -> io::Result<String> {
 
     println!("[INFO] Generated hash for new file: {}", hash);
 
-    // Get the original path as a Path
     let original = Path::new(path);
 
-    // Extract file stem and extension
     let stem = original.file_stem().unwrap_or_default().to_string_lossy();
     let ext = original
         .extension()
@@ -33,7 +30,6 @@ pub fn create_new_file_copy(path: &str) -> io::Result<String> {
         stem, ext
     );
 
-    // Build the new file name in the same directory
     let new_path = original.with_file_name(format!(
         "SUBPROCESS_{}_{}{}",
         stem, hash, ext
@@ -49,12 +45,12 @@ pub fn create_new_file_copy(path: &str) -> io::Result<String> {
     fs::copy(original, &new_path)?;
     println!("[SUCCESS] File copy complete!");
 
-    run_new_sub(new_path.to_string_lossy().to_string());
-
-    Ok(new_path.to_string_lossy().to_string())
+    let server_path = run_new_sub(new_path.to_string_lossy().to_string());
+    
+    return Ok(server_path);
 }
 
-fn run_new_sub(new_path: String) {
+fn run_new_sub(new_path: String) -> String{
     let path = Path::new(&new_path);
 
     // Extract file name
@@ -108,4 +104,9 @@ fn run_new_sub(new_path: String) {
         "[SUCCESS] Subprocess started with PID: {} (running in background)",
         child.id()
     );
+
+    let server_path = format!("http://localhost:{}", port);
+
+    return server_path;
+    
 }

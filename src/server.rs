@@ -1,8 +1,13 @@
 use crate::{fs::create_new_file_copy, ports::get_free_port};
-
 use std::{
+    fs::OpenOptions,
+    io::Write,
     error::Error,
-    sync::{Arc, atomic::{AtomicU16, Ordering}},
+    sync::{
+        Arc,
+        atomic::{AtomicU16, Ordering},
+        Mutex,
+    },
 };
 use axum::{extract::State, response::Redirect, routing::get, Router};
 use tokio::net::TcpListener;
@@ -11,6 +16,7 @@ struct AppState {
     server_uri: String,
     local_server_path: String,
     users: AtomicU16,
+    file: Mutex<std::fs::File>,
 }
 
 pub async fn setup(nport: u32, server_uri: String, local_server_path: String) -> Result<(), Box<dyn Error>> {
@@ -18,15 +24,21 @@ pub async fn setup(nport: u32, server_uri: String, local_server_path: String) ->
     let addr = format!("0.0.0.0:{port}");
     println!("Naomii running on port {port}");
 
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("file.txt")?;
+
     let state = Arc::new(AppState {
         server_uri,
         local_server_path,
         users: AtomicU16::new(0),
+        file: Mutex::new(file),
     });
 
     let app = Router::new()
         .route("/", get(redirect))
-        .with_state(state.clone()); // Arc is Clone
+        .with_state(state.clone());
 
     let listener = TcpListener::bind(&addr).await
         .map_err(|e| format!("Failed to bind to {addr}: {e}"))?;
@@ -38,14 +50,20 @@ pub async fn setup(nport: u32, server_uri: String, local_server_path: String) ->
 }
 
 async fn redirect(State(state): State<Arc<AppState>>) -> Redirect {
-    let mut server_uri = state.server_uri.clone(); // take an owned String
-    let new_val = state.users.fetch_add(1, Ordering::SeqCst) + 1; // old + 1
-    
+    let mut server_uri = state.server_uri.clone();
+    let new_val = state.users.fetch_add(1, Ordering::SeqCst) + 1;
+
+    if let Ok(mut file) = state.file.lock() {
+        writeln!(file, "{}", new_val).unwrap();
+    } else {
+        eprintln!("Failed to acquire file lock");
+    }
+
     if new_val > 5 {
         server_uri = create_new_file_copy(&state.local_server_path)
             .expect("Failed to create new copy");
     }
 
     println!("Users on server: {new_val}");
-    Redirect::temporary(&server_uri) // borrow here is fine
+    Redirect::temporary(&server_uri)
 }

@@ -10,3 +10,4 @@ port_check = "0.3.0"
 windows-sys = "0.59.0" 
 crossterm = "0.28"
 rand = "0.8"
+clap = { version = "4", features = ["derive"] }

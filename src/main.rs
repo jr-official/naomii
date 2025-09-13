@@ -11,19 +11,75 @@ use crossterm::{
     cursor,
 };
 use ports::get_free_port;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(name = "Naomii", about = "Naomii Server Manager CLI")]
+struct CliArgs {
+    #[arg(short, long)]
+    port: Option<u32>,
+
+    #[arg(short = 'l', long)]
+    local_server_path: Option<String>,
+
+    #[arg(short = 's', long)]
+    server_path: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = io::stdout();
 
-    // Clear screen and move to top
+    if std::env::args().len() > 1 {
+        let cli_args = CliArgs::parse();
+
+        if cli_args.port.is_some() && cli_args.local_server_path.is_some() && cli_args.server_path.is_some() {
+            print_section_header(&mut stdout, "Server Setup (Exec Mode)")?;
+
+            let port = cli_args.port.unwrap();
+            let local_server_path = cli_args.local_server_path.unwrap();
+            let server_path = cli_args.server_path.unwrap();
+
+            print_status(&mut stdout, &format!("Setting up NaomiiRouter on port {}...", port))?;
+
+            match setup(port, server_path.clone(), local_server_path.clone()).await {
+                Ok(_) => {
+                    print_success(&mut stdout, &format!(
+                        "Router successfully started on port {} (path: {})",
+                        port, server_path
+                    ))?;
+                }
+                Err(_) => {
+                    print_warning(&mut stdout, "Port unavailable, selecting a free port instead...")?;
+                    let free_port = get_free_port();
+                    match setup(free_port, server_path.clone(), local_server_path.clone()).await {
+                        Ok(_) => {
+                            print_success(&mut stdout, &format!(
+                                "Router started on port {} (path: {})",
+                                free_port, server_path
+                            ))?;
+                        }
+                        Err(_) => {
+                            print_error(&mut stdout, &format!(
+                                "Could not set up NaomiiRouter on port {} (path: {})",
+                                free_port, server_path
+                            ))?;
+                        }
+                    }
+                }
+            }
+
+            return Ok(());
+        } else {
+            print_error(&mut stdout, "All flags -p, -l, and -s must be provided in exec mode")?;
+            return Ok(());
+        }
+    }
+
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
     stdout.execute(cursor::MoveTo(0, 0))?;
-
-    // Banner
     print_banner(&mut stdout)?;
-    
-    // Welcome message
+
     stdout.execute(PrintStyledContent("\nCommands start with ".grey()))?;
     stdout.execute(PrintStyledContent("!".yellow().bold()))?;
     stdout.execute(PrintStyledContent(" — type ".grey()))?;
@@ -31,7 +87,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     stdout.execute(PrintStyledContent(" to see available commands.\n\n".grey()))?;
 
     loop {
-        // Prompt
         stdout.execute(PrintStyledContent(">> ".magenta().bold()))?;
         stdout.flush()?;
 
@@ -42,11 +97,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let cmd = cmd.trim();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
 
-        match cmd {
-            "!help" | "help" | "?" => {
-                print_help(&mut stdout)?;
-            }
+        if parts.is_empty() {
+            continue;
+        }
+
+        match parts[0] {
+            "!help" | "help" | "?" => print_help(&mut stdout)?,
 
             "!startup" | "startup" | "start" => {
                 stdout.execute(PrintStyledContent("Starting Naomii installation...\n".cyan().bold()))?;
@@ -56,35 +114,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "!setnew" | "set" | "new" | "server" => {
                 print_section_header(&mut stdout, "Server Setup")?;
 
-                // Ask for port
                 stdout.execute(PrintStyledContent("Enter a port for ".white()))?;
                 stdout.execute(PrintStyledContent("NaomiiRouter".cyan().bold()))?;
                 stdout.execute(PrintStyledContent(": ".white()))?;
-                stdout.flush()?;            
+                stdout.flush()?;
 
                 let mut custom_port = String::new();
                 if io::stdin().read_line(&mut custom_port).is_err() {
                     print_error(&mut stdout, "Unable to read port")?;
                     continue;
                 }
-                stdout.execute(PrintStyledContent("Where does the bin for this server live?: ".blue().bold()))?;
-                let mut local_server_path = String::new(); // where the server lives on the computer
-                if io::stdin().read_line(&mut local_server_path).is_err() {
-                    print_error(&mut stdout, "Unable to read local server path")?;
-                    continue;
-                }
-                // Ask for server path
-                stdout.execute(PrintStyledContent("Where on localhost does this server run exactly?: ".white()))?;
-                stdout.flush()?;
-                let mut server_path = String::new(); // very similar name but this is where the server runs (on localhost)
-                if io::stdin().read_line(&mut server_path).is_err() {
-                    print_error(&mut stdout, "Unable to read server path")?;
-                    continue;
-                }
-                let server_path = server_path.trim().to_string(); // remove newline
-                let local_server_path = local_server_path.trim().to_string();
-                // Validate port
-                let port: u32 = match custom_port.trim().parse::<u32>() {
+
+                let port = match custom_port.trim().parse::<u32>() {
                     Ok(num) if num > 0 && num < 65536 => num,
                     _ => {
                         print_error(&mut stdout, "Invalid port number (1-65535)")?;
@@ -92,9 +133,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
+                stdout.execute(PrintStyledContent("Where does the bin for this server live?: ".blue().bold()))?;
+                let mut local_server_path = String::new();
+                if io::stdin().read_line(&mut local_server_path).is_err() {
+                    print_error(&mut stdout, "Unable to read local server path")?;
+                    continue;
+                }
+                let local_server_path = local_server_path.trim().to_string();
+
+                stdout.execute(PrintStyledContent("Where on localhost does this server run exactly?: ".white().bold()))?;
+                stdout.flush()?;
+                let mut server_path = String::new();
+                if io::stdin().read_line(&mut server_path).is_err() {
+                    print_error(&mut stdout, "Unable to read server path")?;
+                    continue;
+                }
+                let server_path = server_path.trim().to_string();
+
                 print_status(&mut stdout, &format!("Setting up NaomiiRouter on port {}...", port))?;
 
-                // Attempt setup
                 match setup(port, server_path.clone(), local_server_path.clone()).await {
                     Ok(_) => {
                         print_success(&mut stdout, &format!(
@@ -104,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Err(_) => {
                         print_warning(&mut stdout, "Port unavailable, selecting a free port instead...")?;
-                        let free_port = get_free_port(); // custom function, not the same as the one from port_check
+                        let free_port = get_free_port();
                         match setup(free_port, server_path.clone(), local_server_path.clone()).await {
                             Ok(_) => {
                                 print_success(&mut stdout, &format!(
@@ -123,23 +180,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
             }
 
-
             "!clear" | "clear" | "cls" => {
                 stdout.execute(terminal::Clear(terminal::ClearType::All))?;
                 stdout.execute(cursor::MoveTo(0, 0))?;
                 print_banner(&mut stdout)?;
             }
 
-            "!status" | "status" => {
-                print_status_info(&mut stdout)?;
-            }
+            "!status" | "status" => print_status_info(&mut stdout)?,
 
             "!exit" | "exit" | "!quit" | "quit" | "q" => {
                 print_goodbye(&mut stdout)?;
                 break;
             }
-
-            "" => continue, 
 
             _ => {
                 print_error(&mut stdout, &format!("Unknown command: '{}'", cmd))?;
@@ -148,7 +200,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stdout.execute(PrintStyledContent(" to see available commands.\n".grey()))?;
             }
         }
-        
     }
 
     Ok(())
@@ -162,14 +213,12 @@ fn print_banner(stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error
 fn print_help(stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
     stdout.execute(PrintStyledContent("Available Commands\n".cyan().bold()))?;
     stdout.execute(PrintStyledContent("────────────────────────────────────────\n".dark_grey()))?;
-    
     print_command(stdout, "!help", "Show this help menu")?;
     print_command(stdout, "!startup", "Start Naomii installation")?;
     print_command(stdout, "!setnew", "Set up server on custom port")?;
     print_command(stdout, "!status", "Show system status")?;
     print_command(stdout, "!clear", "Clear the screen")?;
     print_command(stdout, "!exit", "Exit the program")?;
-    
     Ok(())
 }
 

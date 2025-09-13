@@ -1,2 +1,0 @@
-User count: 1
-User count: 2

@@ -38,12 +38,13 @@ pub async fn setup(nport: u32, server_uri: String, local_server_path: String) ->
 }
 
 async fn redirect(State(state): State<Arc<AppState>>) -> Redirect {
-    let mut server_uri = state.server_uri.clone(); // take an owned String
+    let mut server_uri = state.server_uri.clone(); 
     let new_val = state.users.fetch_add(1, Ordering::SeqCst) + 1; // old + 1
     
     if new_val > 5 {
         server_uri = create_new_file_copy(&state.local_server_path)
             .expect("Failed to create new copy");
+        state.users.store(0, Ordering::SeqCst); // reset counter, thanks AI
     }
 
     println!("Users on server: {new_val}");
